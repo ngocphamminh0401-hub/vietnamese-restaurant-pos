@@ -1,0 +1,5 @@
+{
+  "name": "Vietnam Restaurant POS",
+  "description": "A comprehensive Point of Sale system featuring Waiter, Kitchen, and Cashier interfaces with real-time state management.",
+  "requestFramePermissions": []
+}

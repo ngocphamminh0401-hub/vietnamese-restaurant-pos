@@ -1,0 +1,265 @@
+// Đây là file cấu hình chính của Prisma
+// Nó định nghĩa cách dữ liệu được lưu trữ trong Database (PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Quản lý Tài khoản & Phân quyền
+model User {
+  id          String   @id @default(uuid())
+  username    String   @unique
+  password    String   // Trong thực tế nên mã hóa Bcrypt
+  displayName String
+  role        String   // ADMIN, WAITER, CHEF, CASHIER
+  staffId     String?  // ID của nhân viên (nếu có)
+  staff       Staff?   @relation(fields: [staffId], references: [id])
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+// 2. Lịch sử Đăng nhập / Đăng xuất
+model LoginHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  username    String
+  displayName String
+  action      String   // LOGIN hoặc LOGOUT
+  ipAddress   String?
+  timestamp   DateTime @default(now())
+}
+
+// 3. Quản lý Khu vực
+model Area {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  tables    Table[]
+}
+
+// 4. Quản lý Phòng / Bàn
+model Table {
+  id             Int      @id
+  name           String
+  status         String   // AVAILABLE, OCCUPIED, RESERVED, PAYMENT_REQUESTED
+  areaId         String
+  area           Area     @relation(fields: [areaId], references: [id])
+  capacity       Int
+  currentOrderId String?
+  isActive       Boolean  @default(true)
+  sortOrder      Int      @default(0)
+}
+
+// 5. Quản lý Đơn hàng (Hóa đơn)
+model Order {
+  id              String      @id
+  tableId         Int
+  startTime       BigInt
+  isPaid          Boolean     @default(false)
+  status          String      @default("ACTIVE") // ACTIVE, COMPLETED, CANCELLED
+  guestCount      Int?
+  note            String?
+  reservationId   String?
+  discountAmount  Float?      @default(0)
+  discountPercent Float?      @default(0)
+  discountType    String?     // AMOUNT, PERCENT
+  discountReason  String?
+  finalAmount     Float?      @default(0)
+  cancelReason    String?
+  items           OrderItem[]
+}
+
+// 6. Chi tiết các món trong đơn hàng
+model OrderItem {
+  id               String @id @default(uuid())
+  orderId          String
+  order            Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  itemId           String
+  name             String
+  price            Float
+  quantity         Int
+  returnedQuantity Int    @default(0)
+  status           String // DRAFT, PENDING, COOKING, READY, SERVED, CANCELLED
+  note             String?
+  timestamp        BigInt
+  cancelReason     String?
+}
+
+// 7. Danh mục món ăn (Thực đơn)
+model MenuItem {
+  id           String  @id @default(uuid())
+  name         String
+  price        Float
+  category     String
+  image        String
+  unit         String?
+  isActive     Boolean @default(true)
+  isOutOfStock Boolean @default(false)
+}
+
+// 8. Đặt bàn trước
+model Reservation {
+  id            String             @id
+  code          String             @unique
+  status        String             // PENDING, ASSIGNED, CHECKED_IN, CANCELLED
+  customerName  String
+  phoneNumber   String
+  address       String?
+  arrivalTime   DateTime
+  guestCount    Int
+  durationHours Int
+  depositAmount Float?             @default(0)
+  depositMethod String?
+  note          String?
+  preOrderItems String?            // Lưu dạng JSON string
+  createdAt     DateTime           @default(now())
+  tables        ReservationTable[] // Quan hệ với các bàn đã đặt
+}
+
+// 9. Bảng trung gian: Đặt bàn - Bàn (Many-to-Many)
+model ReservationTable {
+  id            String      @id @default(uuid())
+  reservationId String
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  tableId       Int
+  createdAt     DateTime    @default(now())
+
+  @@unique([reservationId, tableId]) // Không cho đặt trùng bàn trong cùng 1 reservation
+}
+
+// 10. Quản lý nhân viên (Thông tin chi tiết)
+model Staff {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  phone       String
+  role        String
+  department  String
+  cccd        String
+  gender      String
+  startDate   DateTime
+  address     String
+  status      String   @default("ACTIVE")
+  users       User[]   // Các tài khoản liên kết với nhân viên này
+}
+
+// 11. Quản lý khách hàng
+model Customer {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  phone       String
+  email       String?
+  address     String?
+  createdAt   DateTime @default(now())
+}
+
+// 12. Quản lý nhà cung cấp
+model Supplier {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  contactName String?
+  phone       String
+  email       String?
+  address     String?
+  taxCode     String?
+  createdAt   DateTime @default(now())
+}
+
+// 13. Danh mục món ăn (Categories)
+model MenuCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+// 14. Quản lý hàng hóa tồn kho
+model InventoryItem {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  unit        String
+  quantity    Float    @default(0)
+  minStock    Float    @default(0)
+  price       Float    @default(0)
+  category    String
+  supplierId  String?
+  createdAt   DateTime @default(now())
+}
+
+// 15. Phiếu nhập hàng
+model ImportTransaction {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  supplierId  String
+  supplierName String
+  items       ImportTransactionItem[]
+  totalAmount Float
+  note        String?
+  createdAt   DateTime @default(now())
+  createdBy   String
+}
+
+// 16. Chi tiết phiếu nhập
+model ImportTransactionItem {
+  id            String            @id @default(uuid())
+  transactionId String
+  transaction   ImportTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  itemId        String
+  itemName      String
+  unit          String
+  quantity      Float
+  price         Float
+  subtotal      Float
+  createdAt     DateTime          @default(now())
+}
+
+// 17. Phiếu xuất hàng
+model ExportTransaction {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  reason      String   // SALE, DAMAGED, INTERNAL_USE, OTHER
+  items       ExportTransactionItem[]
+  totalAmount Float
+  note        String?
+  createdAt   DateTime @default(now())
+  createdBy   String
+}
+
+// 18. Chi tiết phiếu xuất
+model ExportTransactionItem {
+  id            String            @id @default(uuid())
+  transactionId String
+  transaction   ExportTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  itemId        String
+  itemName      String
+  unit          String
+  quantity      Float
+  price         Float
+  subtotal      Float
+  createdAt     DateTime          @default(now())
+}
+
+// 19. Thông báo hệ thống
+model Notification {
+  id          String   @id @default(uuid())
+  type        String   // ORDER_CANCELLED, ORDER_MERGED, ORDER_SPLIT, ITEM_OUT_OF_STOCK, ITEM_BACK_IN_STOCK
+  title       String
+  message     String
+  data        String?  // JSON data with details (itemIds, itemNames, etc.)
+  targetRoles String   @default("WAITER,MANAGER") // Comma-separated roles: WAITER, MANAGER, CASHIER
+  isRead      Boolean  @default(false)
+  userId      String?  // User who performed the action
+  username    String?
+  createdAt   DateTime @default(now())
+}
